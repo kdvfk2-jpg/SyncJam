@@ -1,15 +1,14 @@
-# [Project name]
+# SyncJam
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+SyncJam lets nearby phones join a short-code room and see the shared speaker group in real time.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server with REST room routes and WebSocket presence
+- `pnpm --filter @workspace/syncjam run dev` — run the mobile-first web app
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
@@ -22,23 +21,35 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/syncjam` — React/Vite web app
+- `artifacts/api-server/src/lib/rooms.ts` — in-memory room and participant state
+- `artifacts/api-server/src/index.ts` — HTTP server upgrade path and WebSocket presence
+- `lib/api-spec/openapi.yaml` — REST contract for room creation and lookup
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Room state is intentionally in memory for the milestone; no accounts or database are needed.
+- YouTube playback is not implemented yet; the next milestone will add the official embedded player.
+- WebSocket presence is served from the API artifact at `/api/ws`; the proxy explicitly exposes that path.
+- Room creation and lookup use generated OpenAPI hooks; participant presence uses a reconnecting WebSocket client.
+- The synchronization design is based on NTP-style clock estimation and a server-authoritative timeline, informed by the inspected SyncTune, Beatsync, MUSIXQUARE, and SyncPlay projects.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Create a five-character room code.
+- Join an existing room by code.
+- See connected devices and host ownership update live.
+- Recover from temporary WebSocket disconnects with exponential backoff.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Keep the MVP focused on proving two-phone room and playback synchronization before adding accounts or social features.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Rooms disappear when their last WebSocket participant disconnects.
+- Build checks for the web artifact need `PORT` and `BASE_PATH`; managed workflows provide both.
+- The API artifact must keep `/api/ws` in its service paths or WebSocket upgrades will not reach the server.
 
 ## Pointers
 

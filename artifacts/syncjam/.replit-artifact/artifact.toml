@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "SyncJam"
+description = "A mobile-first shared music room that lets phones join the same room and become synchronized speaker nodes. The first milestone focuses on creating rooms, joining by code, and seeing connected devices in real time."
+version = "1.0.0"
+id = "artifacts/syncjam"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18601
+
+[services.development]
+run = "pnpm --filter @workspace/syncjam run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/syncjam", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/syncjam/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18601"
+BASE_PATH = "/"

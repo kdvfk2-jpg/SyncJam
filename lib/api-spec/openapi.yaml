@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: rooms
+    description: SyncJam room operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /rooms:
+    post:
+      operationId: createRoom
+      tags: [rooms]
+      summary: Create a SyncJam room
+      description: Creates an in-memory room and returns its short code.
+      responses:
+        "201":
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+  /rooms/{code}:
+    get:
+      operationId: getRoom
+      tags: [rooms]
+      summary: Get a SyncJam room
+      description: Returns the current room snapshot for a join flow.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Z0-9]{5}$"
+      responses:
+        "200":
+          description: Room snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +74,27 @@ components:
           type: string
       required:
         - status
+    Room:
+      type: object
+      properties:
+        code:
+          type: string
+          pattern: "^[A-Z0-9]{5}$"
+        createdAt:
+          type: integer
+          format: int64
+        participantCount:
+          type: integer
+          minimum: 0
+      required:
+        - code
+        - createdAt
+        - participantCount
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
 
