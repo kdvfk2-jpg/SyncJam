@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Check, Copy, Crown, Link2, LoaderCircle, Radio, RefreshCw, Signal, UsersRound } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Copy, Crown, ExternalLink, Link2, LoaderCircle, Pause, Play, Radio, RefreshCw, Signal, UsersRound } from 'lucide-react';
 import { useLocation, useParams } from 'wouter';
 import { getGetRoomQueryKey, useGetRoom } from '@workspace/api-client-react';
 import { SyncJamBrand } from '@/components/syncjam-brand';
-import { type Participant, useRoomSocket } from '@/lib/use-room-socket';
+import { type Participant, type PlaybackState, useRoomSocket } from '@/lib/use-room-socket';
+import { useYouTubePlayer } from '@/lib/use-youtube-player';
 
 function initials(name: string) {
   return name
@@ -20,6 +21,206 @@ function statusLabel(status: string) {
   if (normalized.includes('sync')) return 'Syncing';
   if (normalized.includes('wait')) return 'Waiting';
   return 'Ready';
+}
+
+function extractYouTubeId(input: string) {
+  const value = input.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(value)) return value;
+
+  try {
+    const url = new URL(value);
+    if (url.hostname === 'youtu.be') {
+      const id = url.pathname.slice(1).split('/')[0];
+      return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+    }
+    if (url.hostname.endsWith('youtube.com')) {
+      const queryId = url.searchParams.get('v');
+      const pathId = url.pathname.split('/').filter(Boolean).at(-1);
+      const id = queryId ?? (url.pathname.startsWith('/embed/') ? pathId : null);
+      return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function formatTime(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return `${minutes}:${remainder.toString().padStart(2, '0')}`;
+}
+
+function VideoPanel({
+  videoId,
+  canLoad,
+  onLoad,
+  playback,
+  onPlayback,
+}: {
+  videoId: string | null;
+  canLoad: boolean;
+  onLoad: (videoId: string) => void;
+  playback: PlaybackState | null;
+  onPlayback: (playback: Pick<PlaybackState, 'action' | 'state' | 'positionSeconds'>) => void;
+}) {
+  const [videoInput, setVideoInput] = useState(videoId ? `https://youtu.be/${videoId}` : '');
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const player = useYouTubePlayer(videoId);
+  const playbackState = playback?.state ?? 'paused';
+  const [seekValue, setSeekValue] = useState(0);
+
+  useEffect(() => {
+    if (videoId) setVideoInput(`https://youtu.be/${videoId}`);
+  }, [videoId]);
+
+  useEffect(() => {
+    setSeekValue(player.currentTime);
+  }, [player.currentTime]);
+
+  useEffect(() => {
+    if (!videoId || !playback || player.status !== 'ready') return;
+    player.seekTo(playback.positionSeconds);
+    if (playback.state === 'playing') player.play();
+    else if (playback.action !== 'seek') player.pause();
+  }, [videoId, playback, player.status]);
+
+  const submitVideo = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const extractedId = extractYouTubeId(videoInput);
+    if (!extractedId) {
+      setVideoError('Paste a YouTube URL or an 11-character video ID.');
+      return;
+    }
+    setVideoError(null);
+    onLoad(extractedId);
+  };
+
+  const publishPlayback = (action: PlaybackState['action'], state: PlaybackState['state'], positionSeconds: number) => {
+    const safePosition = Math.max(0, positionSeconds);
+    if (action === 'play') player.play();
+    if (action === 'pause') player.pause();
+    if (action === 'seek') player.seekTo(safePosition);
+    onPlayback({ action, state, positionSeconds: safePosition });
+  };
+
+  const changePosition = (value: number) => {
+    setSeekValue(value);
+    publishPlayback('seek', playbackState, value);
+  };
+
+  return (
+    <section className="mt-5 rounded-[28px] border border-[#403557] bg-[#312747] p-6 sm:p-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#9b91ac]">Shared source</p>
+          <h2 className="mt-2 text-2xl font-bold tracking-[-0.04em]">
+            {videoId ? 'Video is loaded' : 'Load a video for the room'}
+          </h2>
+          <p className="mt-2 max-w-[560px] text-sm leading-6 text-[#9b91ac]">
+            {canLoad
+              ? 'Choose one YouTube video. Every connected phone will load its own official embedded player.'
+              : 'The host chooses the shared YouTube video. You will see it here when it is ready.'}
+          </p>
+        </div>
+        {videoId && (
+          <a
+            className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#d9ff58] transition hover:text-[#f0ffb0]"
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open on YouTube <ExternalLink size={13} />
+          </a>
+        )}
+      </div>
+
+      {canLoad && (
+        <form className="mt-6 flex flex-col gap-3 sm:flex-row" onSubmit={submitVideo}>
+          <input
+            data-testid="input-youtube-url"
+            className="min-h-12 min-w-0 flex-1 rounded-xl border border-[#594c70] bg-[#28203f] px-4 text-sm text-[#f5f0ff] outline-none transition placeholder:text-[#7c718e] focus:border-[#d9ff58]"
+            value={videoInput}
+            onChange={(event) => setVideoInput(event.target.value)}
+            placeholder="YouTube URL or video ID"
+            aria-label="YouTube URL or video ID"
+          />
+          <button
+            data-testid="button-load-video"
+            type="submit"
+            className="syncjam-focus min-h-12 rounded-xl bg-[#d9ff58] px-5 text-sm font-extrabold text-[#28203f] transition hover:bg-[#e3ff83]"
+          >
+            {videoId ? 'Change video' : 'Load video'}
+          </button>
+        </form>
+      )}
+      {videoError && <p className="mt-3 text-xs text-[#ff9c8c]">{videoError}</p>}
+
+      <div className="mt-6 overflow-hidden rounded-2xl border border-[#594c70] bg-[#28203f]">
+        {videoId ? (
+          <div className="aspect-video w-full" ref={player.containerRef} data-testid="youtube-player" />
+        ) : (
+          <div className="flex aspect-video flex-col items-center justify-center px-6 text-center">
+            <div className="mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-[#3d3354] text-[#d9ff58]">
+              <Radio size={20} />
+            </div>
+            <p className="text-sm font-bold text-[#f5f0ff]">No video loaded yet</p>
+            <p className="mt-2 max-w-[300px] text-xs leading-5 text-[#9b91ac]">
+              {canLoad ? 'The embedded player will appear here after the host loads a video.' : 'Stay in the room while the host sets the source.'}
+            </p>
+          </div>
+        )}
+      </div>
+      {videoId && canLoad && (
+        <div className="mt-4 rounded-2xl border border-[#594c70] bg-[#28203f] p-4">
+          <div className="flex items-center justify-between gap-4">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-[#d9ff58]">
+              {playbackState === 'playing' ? 'Playing for the room' : 'Paused for the room'}
+            </p>
+            <p className="font-mono text-[10px] text-[#9b91ac]">
+              {formatTime(seekValue)} / {formatTime(player.duration)}
+            </p>
+          </div>
+          <input
+            data-testid="input-playback-position"
+            className="mt-4 h-1.5 w-full cursor-pointer accent-[#d9ff58]"
+            type="range"
+            min="0"
+            max={Math.max(player.duration, 1)}
+            step="0.1"
+            value={Math.min(seekValue, Math.max(player.duration, 1))}
+            onChange={(event) => changePosition(Number(event.target.value))}
+            disabled={player.status !== 'ready'}
+            aria-label="Playback position"
+          />
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              data-testid="button-play-video"
+              type="button"
+              onClick={() => publishPlayback('play', 'playing', player.currentTime)}
+              disabled={player.status !== 'ready' || playbackState === 'playing'}
+              className="syncjam-focus flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#d9ff58] px-4 text-xs font-extrabold text-[#28203f] transition hover:bg-[#e3ff83] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Play size={15} fill="currentColor" /> Play
+            </button>
+            <button
+              data-testid="button-pause-video"
+              type="button"
+              onClick={() => publishPlayback('pause', 'paused', player.currentTime)}
+              disabled={player.status !== 'ready' || playbackState !== 'playing'}
+              className="syncjam-focus flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-[#594c70] px-4 text-xs font-extrabold text-[#f5f0ff] transition hover:border-[#d9ff58] hover:text-[#d9ff58] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Pause size={15} fill="currentColor" /> Pause
+            </button>
+          </div>
+        </div>
+      )}
+      {videoId && player.status === 'error' && (
+        <p className="mt-3 text-xs text-[#ff9c8c]">The YouTube player could not load in this browser.</p>
+      )}
+    </section>
+  );
 }
 
 function ParticipantRow({ participant, index }: { participant: Participant; index: number }) {
@@ -113,6 +314,7 @@ export default function Room() {
   const participantCount = Math.max(roomQuery.data?.participantCount ?? 0, sortedParticipants.length);
   const connectionCopy = socket.status === 'connected' ? 'Live presence' : socket.status === 'reconnecting' ? 'Reconnecting' : 'Connecting';
   const hasPresence = sortedParticipants.length > 0;
+  const isHost = sortedParticipants.some((participant) => participant.isSelf && participant.isHost);
 
   return (
     <main className="min-h-[100dvh] bg-[#28203f] text-[#f5f0ff]">
@@ -203,6 +405,13 @@ export default function Room() {
             </div>
           </section>
         </div>
+        <VideoPanel
+          videoId={socket.currentVideoId}
+          canLoad={isHost}
+          onLoad={socket.setCurrentVideo}
+          playback={socket.currentPlayback}
+          onPlayback={socket.setCurrentPlayback}
+        />
       </div>
     </main>
   );

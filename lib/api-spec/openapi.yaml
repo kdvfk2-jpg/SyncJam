@@ -86,10 +86,14 @@ components:
         participantCount:
           type: integer
           minimum: 0
+        currentVideoId:
+          type: ["string", "null"]
+          pattern: "^[A-Za-z0-9_-]{11}$"
       required:
         - code
         - createdAt
         - participantCount
+        - currentVideoId
     Error:
       type: object
       properties:

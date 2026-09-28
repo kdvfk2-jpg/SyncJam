@@ -16,6 +16,7 @@ export const HealthCheckResponse = zod.object({
   "status": zod.string()
 })
 
+
 /**
  * Creates an in-memory room and returns its short code.
  * @summary Create a SyncJam room
@@ -23,12 +24,14 @@ export const HealthCheckResponse = zod.object({
 export const createRoomResponseCodeRegExp = new RegExp('^[A-Z0-9]{5}$');
 export const createRoomResponseParticipantCountMin = 0;
 
+export const createRoomResponseCurrentVideoIdRegExp = new RegExp('^[A-Za-z0-9_-]{11}$');
 
 
 export const CreateRoomResponse = zod.object({
   "code": zod.string().regex(createRoomResponseCodeRegExp),
   "createdAt": zod.number().int(),
-  "participantCount": zod.number().int().min(createRoomResponseParticipantCountMin)
+  "participantCount": zod.number().int().min(createRoomResponseParticipantCountMin),
+  "currentVideoId": zod.string().regex(createRoomResponseCurrentVideoIdRegExp).nullable()
 })
 
 
@@ -46,11 +49,14 @@ export const GetRoomParams = zod.object({
 export const getRoomResponseCodeRegExp = new RegExp('^[A-Z0-9]{5}$');
 export const getRoomResponseParticipantCountMin = 0;
 
+export const getRoomResponseCurrentVideoIdRegExp = new RegExp('^[A-Za-z0-9_-]{11}$');
 
 
 export const GetRoomResponse = zod.object({
   "code": zod.string().regex(getRoomResponseCodeRegExp),
   "createdAt": zod.number().int(),
-  "participantCount": zod.number().int().min(getRoomResponseParticipantCountMin)
+  "participantCount": zod.number().int().min(getRoomResponseParticipantCountMin),
+  "currentVideoId": zod.string().regex(getRoomResponseCurrentVideoIdRegExp).nullable()
 })
+
 

@@ -9,6 +9,8 @@ import {
   getPresenceSnapshot,
   getRoom,
   removeParticipant,
+  setCurrentPlayback,
+  setCurrentVideo,
 } from "./lib/rooms";
 
 const rawPort = process.env["PORT"];
@@ -65,7 +67,14 @@ webSocketServer.on("connection", (socket, request) => {
 
   socket.on("message", (raw) => {
     try {
-      const message = JSON.parse(raw.toString()) as { type?: string; clientTime?: number };
+      const message = JSON.parse(raw.toString()) as {
+        type?: string;
+        clientTime?: number;
+        videoId?: string;
+        action?: string;
+        state?: string;
+        positionSeconds?: number;
+      };
       if (message.type === "clock:ping" && typeof message.clientTime === "number") {
         socket.send(
           JSON.stringify({
@@ -75,12 +84,44 @@ webSocketServer.on("connection", (socket, request) => {
           }),
         );
       }
+      if (
+        message.type === "video:set" &&
+        participant.isHost &&
+        typeof message.videoId === "string" &&
+        /^[A-Za-z0-9_-]{11}$/.test(message.videoId)
+      ) {
+        setCurrentVideo(room, message.videoId);
+        broadcast(room, { type: "video:update", room: getPresenceSnapshot(room) });
+      }
+      if (
+        message.type === "playback:set" &&
+        participant.isHost &&
+        (message.action === "play" ||
+          message.action === "pause" ||
+          message.action === "seek") &&
+        (message.state === "playing" || message.state === "paused") &&
+        typeof message.positionSeconds === "number" &&
+        Number.isFinite(message.positionSeconds) &&
+        message.positionSeconds >= 0 &&
+        message.positionSeconds <= 24 * 60 * 60
+      ) {
+        setCurrentPlayback(room, {
+          action: message.action,
+          state: message.state,
+          positionSeconds: message.positionSeconds,
+        });
+        broadcast(room, {
+          type: "playback:update",
+          room: getPresenceSnapshot(room),
+        });
+      }
     } catch {
       // Ignore malformed client messages; the connection remains usable.
     }
   });
 
   socket.on("close", () => {
+    if (room.participants.get(participant.id)?.socket !== participant.socket) return;
     removeParticipant(room, participant.id);
     if (getRoom(room.code)) {
       broadcast(room, { type: "presence:update", room: getPresenceSnapshot(room) });

@@ -9,10 +9,19 @@ export type Participant = {
   socket: WebSocket;
 };
 
+export type PlaybackState = {
+  action: "play" | "pause" | "seek";
+  state: "playing" | "paused";
+  positionSeconds: number;
+  serverTime: number;
+};
+
 export type Room = {
   code: string;
   createdAt: number;
   hostId: string | null;
+  currentVideoId: string | null;
+  currentPlayback: PlaybackState | null;
   participants: Map<string, Participant>;
 };
 
@@ -35,6 +44,8 @@ export function createRoom() {
     code,
     createdAt: Date.now(),
     hostId: null,
+    currentVideoId: null,
+    currentPlayback: null,
     participants: new Map(),
   };
   rooms.set(code, room);
@@ -50,6 +61,7 @@ export function getRoomSnapshot(room: Room) {
     code: room.code,
     createdAt: room.createdAt,
     participantCount: room.participants.size,
+    currentVideoId: room.currentVideoId,
   };
 }
 
@@ -57,6 +69,8 @@ export function getPresenceSnapshot(room: Room) {
   return {
     code: room.code,
     hostId: room.hostId,
+    currentVideoId: room.currentVideoId,
+    currentPlayback: room.currentPlayback,
     participants: Array.from(room.participants.values()).map(
       ({ socket: _socket, ...participant }) => participant,
     ),
@@ -67,7 +81,9 @@ export function addParticipant(
   room: Room,
   participant: Omit<Participant, "isHost">,
 ) {
-  const isHost = room.hostId === null;
+  const existing = room.participants.get(participant.id);
+  existing?.socket.close(4001, "Replaced by a newer connection");
+  const isHost = room.hostId === null || room.hostId === participant.id;
   const nextParticipant = { ...participant, isHost };
   room.participants.set(participant.id, nextParticipant);
   if (isHost) room.hostId = participant.id;
@@ -85,6 +101,21 @@ export function removeParticipant(room: Room, participantId: string) {
     }
   }
   if (room.participants.size === 0) rooms.delete(room.code);
+}
+
+export function setCurrentVideo(room: Room, videoId: string) {
+  room.currentVideoId = videoId;
+  room.currentPlayback = null;
+}
+
+export function setCurrentPlayback(
+  room: Room,
+  playback: Omit<PlaybackState, "serverTime">,
+) {
+  room.currentPlayback = {
+    ...playback,
+    serverTime: Date.now(),
+  };
 }
 
 export function broadcast(room: Room, message: unknown) {

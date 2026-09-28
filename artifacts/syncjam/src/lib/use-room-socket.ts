@@ -9,14 +9,25 @@ export type Participant = {
   clockOffsetMs: number;
 };
 
+export type PlaybackState = {
+  action: 'play' | 'pause' | 'seek';
+  state: 'playing' | 'paused';
+  positionSeconds: number;
+  serverTime: number;
+};
+
 export type RoomSocketState = {
   participants: Participant[];
+  currentVideoId: string | null;
+  currentPlayback: PlaybackState | null;
   status: 'connecting' | 'connected' | 'reconnecting' | 'offline';
   lastMessageAt: number | null;
 };
 
 const emptyState: RoomSocketState = {
   participants: [],
+  currentVideoId: null,
+  currentPlayback: null,
   status: 'connecting',
   lastMessageAt: null,
 };
@@ -68,19 +79,46 @@ function normalizeParticipant(value: Partial<Participant>, index: number, selfId
   };
 }
 
-function extractParticipants(message: unknown, selfId: string): Participant[] | null {
+function extractRoomUpdate(
+  message: unknown,
+  selfId: string,
+): {
+  participants: Participant[];
+  currentVideoId: string | null;
+  currentPlayback: PlaybackState | null;
+} | null {
   if (!message || typeof message !== 'object') return null;
   const payload = message as {
     participants?: unknown;
-    room?: { participants?: unknown };
+    room?: {
+      participants?: unknown;
+      currentVideoId?: unknown;
+      currentPlayback?: unknown;
+    };
     data?: { participants?: unknown };
     type?: string;
   };
   const raw = payload.participants ?? payload.room?.participants ?? payload.data?.participants;
   if (!Array.isArray(raw)) return null;
-  return raw.map((participant, index) =>
-    normalizeParticipant((participant ?? {}) as Partial<Participant>, index, selfId),
-  );
+  const currentVideoId =
+    typeof payload.room?.currentVideoId === 'string' ? payload.room.currentVideoId : null;
+  const rawPlayback = payload.room?.currentPlayback;
+  const currentPlayback =
+    rawPlayback &&
+    typeof rawPlayback === 'object' &&
+    (rawPlayback as { action?: unknown }).action &&
+    (rawPlayback as { state?: unknown }).state &&
+    typeof (rawPlayback as { positionSeconds?: unknown }).positionSeconds === 'number' &&
+    typeof (rawPlayback as { serverTime?: unknown }).serverTime === 'number'
+      ? (rawPlayback as PlaybackState)
+      : null;
+  return {
+    participants: raw.map((participant, index) =>
+      normalizeParticipant((participant ?? {}) as Partial<Participant>, index, selfId),
+    ),
+    currentVideoId,
+    currentPlayback,
+  };
 }
 
 export function useRoomSocket(code: string) {
@@ -124,11 +162,13 @@ export function useRoomSocket(code: string) {
 
       socket.onmessage = (event) => {
         try {
-          const participants = extractParticipants(JSON.parse(event.data as string), nodeId);
-          if (participants) {
+          const update = extractRoomUpdate(JSON.parse(event.data as string), nodeId);
+          if (update) {
             setState((current) => ({
               ...current,
-              participants,
+              participants: update.participants,
+              currentVideoId: update.currentVideoId,
+              currentPlayback: update.currentPlayback,
               lastMessageAt: Date.now(),
             }));
           }
@@ -161,5 +201,15 @@ export function useRoomSocket(code: string) {
     };
   }, [code]);
 
-  return state;
+  const setCurrentVideo = (videoId: string) => {
+    socketRef.current?.send(JSON.stringify({ type: 'video:set', videoId }));
+  };
+
+  const setCurrentPlayback = (
+    playback: Pick<PlaybackState, 'action' | 'state' | 'positionSeconds'>,
+  ) => {
+    socketRef.current?.send(JSON.stringify({ type: 'playback:set', ...playback }));
+  };
+
+  return { ...state, setCurrentVideo, setCurrentPlayback };
 }

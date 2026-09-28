@@ -124,6 +124,12 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+
+
+
+
+
+
 export const getCreateRoomUrl = () => {
 
 
@@ -270,4 +276,10 @@ export function useGetRoom<TData = Awaited<ReturnType<typeof getRoom>>, TError =
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
 

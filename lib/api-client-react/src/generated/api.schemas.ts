@@ -15,8 +15,14 @@ export interface Room {
   createdAt: number;
   /** @minimum 0 */
   participantCount: number;
+  /**
+     * @nullable
+     * @pattern ^[A-Za-z0-9_-]{11}$
+     */
+  currentVideoId: string | null;
 }
 
 export interface Error {
   error: string;
 }
+

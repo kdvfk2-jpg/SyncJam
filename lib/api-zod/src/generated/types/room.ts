@@ -12,4 +12,9 @@ export interface Room {
   createdAt: bigint;
   /** @minimum 0 */
   participantCount: number;
+  /**
+     * @nullable
+     * @pattern ^[A-Za-z0-9_-]{11}$
+     */
+  currentVideoId: string | null;
 }
