@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 
 type YouTubePlayer = {
   destroy: () => void;
-  playVideo: () => void;
-  pauseVideo: () => void;
-  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
-  getCurrentTime: () => number;
-  getDuration: () => number;
+  playVideo?: () => void;
+  pauseVideo?: () => void;
+  seekTo?: (seconds: number, allowSeekAhead: boolean) => void;
+  getCurrentTime?: () => number;
+  getDuration?: () => number;
 };
 
 type YouTubeApi = {
@@ -62,6 +62,26 @@ export function useYouTubePlayer(videoId: string | null) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const readCurrentTime = () => {
+    const player = playerRef.current;
+    if (typeof player?.getCurrentTime !== 'function') return null;
+    try {
+      const value = player.getCurrentTime();
+      return Number.isFinite(value) ? value : null;
+    } catch {
+      return null;
+    }
+  };
+  const readDuration = () => {
+    const player = playerRef.current;
+    if (typeof player?.getDuration !== 'function') return null;
+    try {
+      const value = player.getDuration();
+      return Number.isFinite(value) ? value : null;
+    } catch {
+      return null;
+    }
+  };
 
   useEffect(() => {
     let disposed = false;
@@ -79,9 +99,8 @@ export function useYouTubePlayer(videoId: string | null) {
 
     setStatus('loading');
     const timeInterval = window.setInterval(() => {
-      if (playerRef.current) {
-        setCurrentTime(playerRef.current.getCurrentTime());
-      }
+      const value = readCurrentTime();
+      if (value !== null) setCurrentTime(value);
     }, 500);
     loadYouTubeApi()
       .then((api) => {
@@ -98,8 +117,8 @@ export function useYouTubePlayer(videoId: string | null) {
           events: {
             onReady: () => {
               if (!disposed) {
-                setDuration(playerRef.current?.getDuration() ?? 0);
-                setCurrentTime(playerRef.current?.getCurrentTime() ?? 0);
+                setDuration(readDuration() ?? 0);
+                setCurrentTime(readCurrentTime() ?? 0);
                 setStatus('ready');
               }
             },
@@ -123,8 +142,9 @@ export function useYouTubePlayer(videoId: string | null) {
     status,
     duration,
     currentTime,
-    play: () => playerRef.current?.playVideo(),
-    pause: () => playerRef.current?.pauseVideo(),
-    seekTo: (seconds: number) => playerRef.current?.seekTo(seconds, true),
+    getCurrentTime: () => readCurrentTime() ?? currentTime,
+    play: () => playerRef.current?.playVideo?.(),
+    pause: () => playerRef.current?.pauseVideo?.(),
+    seekTo: (seconds: number) => playerRef.current?.seekTo?.(seconds, true),
   };
 }

@@ -58,12 +58,14 @@ function VideoPanel({
   onLoad,
   playback,
   onPlayback,
+  clockOffsetMs,
 }: {
   videoId: string | null;
   canLoad: boolean;
   onLoad: (videoId: string) => void;
   playback: PlaybackState | null;
   onPlayback: (playback: Pick<PlaybackState, 'action' | 'state' | 'positionSeconds'>) => void;
+  clockOffsetMs: number | null;
 }) {
   const [videoInput, setVideoInput] = useState(videoId ? `https://youtu.be/${videoId}` : '');
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -79,12 +81,36 @@ function VideoPanel({
     setSeekValue(player.currentTime);
   }, [player.currentTime]);
 
+  const getTimelinePosition = (nextPlayback: PlaybackState) => {
+    if (nextPlayback.state !== 'playing') return nextPlayback.positionSeconds;
+    const estimatedServerNow = Date.now() + (clockOffsetMs ?? 0);
+    const elapsedSeconds = Math.max(0, estimatedServerNow - nextPlayback.serverTime) / 1000;
+    return nextPlayback.positionSeconds + elapsedSeconds;
+  };
+
   useEffect(() => {
     if (!videoId || !playback || player.status !== 'ready') return;
-    player.seekTo(playback.positionSeconds);
+    player.seekTo(getTimelinePosition(playback));
     if (playback.state === 'playing') player.play();
-    else if (playback.action !== 'seek') player.pause();
+    else player.pause();
   }, [videoId, playback, player.status]);
+
+  useEffect(() => {
+    if (!videoId || !playback || playback.state !== 'playing' || player.status !== 'ready') {
+      return;
+    }
+
+    const correctDrift = () => {
+      const expectedPosition = getTimelinePosition(playback);
+        const driftSeconds = expectedPosition - (player.getCurrentTime() ?? 0);
+      if (Math.abs(driftSeconds) > 0.35) {
+        player.seekTo(expectedPosition);
+      }
+    };
+
+    const correctionInterval = window.setInterval(correctDrift, 2000);
+    return () => window.clearInterval(correctionInterval);
+  }, [videoId, playback, player.status, clockOffsetMs]);
 
   const submitVideo = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -214,7 +240,19 @@ function VideoPanel({
               <Pause size={15} fill="currentColor" /> Pause
             </button>
           </div>
+          <p className="mt-3 text-[11px] leading-5 text-[#9b91ac]">
+            {clockOffsetMs === null
+              ? 'Measuring the room clock before the next correction.'
+              : `Room clock aligned · ${clockOffsetMs >= 0 ? '+' : ''}${clockOffsetMs} ms`}
+          </p>
         </div>
+      )}
+      {videoId && !canLoad && (
+        <p className="mt-4 text-[11px] leading-5 text-[#9b91ac]">
+          {clockOffsetMs === null
+            ? 'Joining the room timeline…'
+            : 'Following the host timeline with automatic drift correction.'}
+        </p>
       )}
       {videoId && player.status === 'error' && (
         <p className="mt-3 text-xs text-[#ff9c8c]">The YouTube player could not load in this browser.</p>
@@ -411,6 +449,7 @@ export default function Room() {
           onLoad={socket.setCurrentVideo}
           playback={socket.currentPlayback}
           onPlayback={socket.setCurrentPlayback}
+          clockOffsetMs={socket.clockOffsetMs}
         />
       </div>
     </main>

@@ -30,6 +30,7 @@ SyncJam lets nearby phones join a short-code room and see the shared speaker gro
 
 - Room state is intentionally in memory for the milestone; no accounts or database are needed.
 - Each room can load one official YouTube embedded player per connected device; host playback commands are relayed over WebSocket.
+- Playback commands carry server timestamps; clients estimate clock offset and correct meaningful playback drift locally.
 - WebSocket presence is served from the API artifact at `/api/ws`; the proxy explicitly exposes that path.
 - Room creation and lookup use generated OpenAPI hooks; participant presence uses a reconnecting WebSocket client.
 - The synchronization design is based on NTP-style clock estimation and a server-authoritative timeline, informed by the inspected SyncTune, Beatsync, MUSIXQUARE, and SyncPlay projects.
@@ -40,6 +41,7 @@ SyncJam lets nearby phones join a short-code room and see the shared speaker gro
 - Join an existing room by code.
 - See connected devices and host ownership update live.
 - Host can load, play, pause, and seek the shared YouTube source for the room.
+- Guests follow the server-timestamped room timeline with late-join positioning and periodic drift correction.
 - Recover from temporary WebSocket disconnects with exponential backoff.
 
 ## User preferences

@@ -1,0 +1,1 @@
+- [YouTube IFrame lifecycle](youtube-player-lifecycle.md) — guard player method calls until the embedded API has fully exposed them.

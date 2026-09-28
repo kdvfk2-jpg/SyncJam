@@ -20,6 +20,7 @@ export type RoomSocketState = {
   participants: Participant[];
   currentVideoId: string | null;
   currentPlayback: PlaybackState | null;
+  clockOffsetMs: number | null;
   status: 'connecting' | 'connected' | 'reconnecting' | 'offline';
   lastMessageAt: number | null;
 };
@@ -28,6 +29,7 @@ const emptyState: RoomSocketState = {
   participants: [],
   currentVideoId: null,
   currentPlayback: null,
+  clockOffsetMs: null,
   status: 'connecting',
   lastMessageAt: null,
 };
@@ -140,6 +142,8 @@ export function useRoomSocket(code: string) {
       };
     }
 
+    let clockInterval: number | undefined;
+
     const connect = () => {
       if (disposed) return;
       setState((current) => ({
@@ -154,15 +158,52 @@ export function useRoomSocket(code: string) {
 
       const socket = new WebSocket(socketUrl(code, nodeId, nodeName));
       socketRef.current = socket;
+      const clockSamples: Array<{ offsetMs: number; roundTripMs: number }> = [];
+
+      const sendClockPing = () => {
+        if (socket.readyState !== WebSocket.OPEN) return;
+        const clientTime = Date.now();
+        socket.send(JSON.stringify({ type: 'clock:ping', clientTime }));
+      };
 
       socket.onopen = () => {
         attemptRef.current = 0;
         setState((current) => ({ ...current, status: 'connected' }));
+        sendClockPing();
+        clockInterval = window.setInterval(sendClockPing, 5000);
       };
 
       socket.onmessage = (event) => {
         try {
-          const update = extractRoomUpdate(JSON.parse(event.data as string), nodeId);
+          const message = JSON.parse(event.data as string) as {
+            type?: string;
+            clientTime?: unknown;
+            serverTime?: unknown;
+          };
+          if (
+            message.type === 'clock:pong' &&
+            typeof message.clientTime === 'number' &&
+            typeof message.serverTime === 'number' &&
+            Number.isFinite(message.clientTime) &&
+            Number.isFinite(message.serverTime)
+          ) {
+            const receivedAt = Date.now();
+            const roundTripMs = Math.max(0, receivedAt - message.clientTime);
+            const offsetMs = message.serverTime - (message.clientTime + roundTripMs / 2);
+            clockSamples.push({ offsetMs, roundTripMs });
+            if (clockSamples.length > 8) clockSamples.shift();
+            const bestSample = clockSamples.reduce((best, sample) =>
+              sample.roundTripMs < best.roundTripMs ? sample : best,
+            );
+            setState((current) => ({
+              ...current,
+              clockOffsetMs: Math.round(bestSample.offsetMs),
+              lastMessageAt: receivedAt,
+            }));
+            return;
+          }
+
+          const update = extractRoomUpdate(message, nodeId);
           if (update) {
             setState((current) => ({
               ...current,
@@ -183,6 +224,10 @@ export function useRoomSocket(code: string) {
 
       socket.onclose = () => {
         if (disposed) return;
+        if (clockInterval) {
+          window.clearInterval(clockInterval);
+          clockInterval = undefined;
+        }
         socketRef.current = null;
         attemptRef.current += 1;
         setState((current) => ({ ...current, status: 'reconnecting' }));
@@ -196,19 +241,26 @@ export function useRoomSocket(code: string) {
     return () => {
       disposed = true;
       if (retryRef.current) window.clearTimeout(retryRef.current);
+      if (clockInterval) window.clearInterval(clockInterval);
       socketRef.current?.close();
       socketRef.current = null;
     };
   }, [code]);
 
+  const sendMessage = (message: unknown) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(message));
+    }
+  };
+
   const setCurrentVideo = (videoId: string) => {
-    socketRef.current?.send(JSON.stringify({ type: 'video:set', videoId }));
+    sendMessage({ type: 'video:set', videoId });
   };
 
   const setCurrentPlayback = (
     playback: Pick<PlaybackState, 'action' | 'state' | 'positionSeconds'>,
   ) => {
-    socketRef.current?.send(JSON.stringify({ type: 'playback:set', ...playback }));
+    sendMessage({ type: 'playback:set', ...playback });
   };
 
   return { ...state, setCurrentVideo, setCurrentPlayback };
